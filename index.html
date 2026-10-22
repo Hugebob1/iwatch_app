@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Zadania">
+<title>Zadania</title>
+<style>
+  :root {
+    --bg: #f6f6f4;
+    --card: #ffffff;
+    --text: #1a1a1a;
+    --muted: #6f6f6b;
+    --line: #e4e4e0;
+    --accent: #2f6fed;
+    --accent-text: #ffffff;
+    --danger: #c43d3d;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #121212;
+      --card: #1e1e1e;
+      --text: #ececec;
+      --muted: #9a9a96;
+      --line: #2e2e2e;
+      --accent: #5b8def;
+      --accent-text: #0d0d0d;
+      --danger: #e06666;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font: 16px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    padding: max(16px, env(safe-area-inset-top)) 16px max(24px, env(safe-area-inset-bottom));
+  }
+  main { max-width: 520px; margin: 0 auto; }
+  h1 { font-size: 24px; margin: 8px 0 16px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 28px 0 8px; font-weight: 600; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; }
+  .pad { padding: 16px; }
+  input[type=text], input[type=email], input[type=password] {
+    width: 100%;
+    font: inherit;
+    color: var(--text);
+    background: var(--bg);
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 12px;
+  }
+  input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  button {
+    font: inherit;
+    cursor: pointer;
+    border: 0;
+    border-radius: 10px;
+    padding: 12px 16px;
+    background: var(--accent);
+    color: var(--accent-text);
+    font-weight: 600;
+  }
+  button.ghost { background: transparent; color: var(--muted); font-weight: 500; padding: 6px 10px; }
+  button.danger { color: var(--danger); }
+  .stack > * + * { margin-top: 10px; }
+  .row { display: flex; gap: 8px; }
+  .row input { flex: 1; }
+  ul { list-style: none; margin: 0; padding: 0; }
+  li { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-top: 1px solid var(--line); }
+  li:first-child { border-top: 0; }
+  li .title { flex: 1; word-break: break-word; }
+  li .meta { color: var(--muted); font-size: 13px; }
+  .check {
+    width: 26px; height: 26px; border-radius: 50%;
+    border: 2px solid var(--muted); background: transparent; padding: 0; flex: none;
+  }
+  .check:hover { border-color: var(--accent); }
+  .done .title { color: var(--muted); text-decoration: line-through; }
+  .empty { color: var(--muted); padding: 16px; text-align: center; }
+  .error { color: var(--danger); font-size: 14px; min-height: 1.2em; }
+  .topbar { display: flex; justify-content: space-between; align-items: center; }
+  [hidden] { display: none !important; }
+  code { background: var(--bg); padding: 2px 6px; border-radius: 6px; font-size: 14px; }
+</style>
+</head>
+<body>
+<main>
+
+  <section id="setup" class="card pad" hidden>
+    <h1>Brakuje konfiguracji</h1>
+    <p>Otwórz plik <code>index.html</code> i na początku skryptu wklej swoje <code>SUPABASE_URL</code> oraz <code>SUPABASE_KEY</code> (klucz Publishable).</p>
+  </section>
+
+  <section id="login" class="card pad" hidden>
+    <h1>Zaloguj się</h1>
+    <form id="login-form" class="stack">
+      <input id="email" type="email" placeholder="E-mail" autocomplete="username" required>
+      <input id="password" type="password" placeholder="Hasło" autocomplete="current-password" required>
+      <button type="submit" style="width:100%">Zaloguj</button>
+      <div id="login-error" class="error"></div>
+    </form>
+  </section>
+
+  <section id="app" hidden>
+    <div class="topbar">
+      <h1>Zadania</h1>
+      <button id="logout" class="ghost">Wyloguj</button>
+    </div>
+
+    <form id="add-form" class="row">
+      <input id="new-title" type="text" placeholder="Nowe zadanie…" autocomplete="off" required>
+      <button type="submit">Dodaj</button>
+    </form>
+    <div id="app-error" class="error"></div>
+
+    <h2>Do zrobienia</h2>
+    <div class="card"><ul id="active"></ul></div>
+
+    <h2>Historia</h2>
+    <div class="card"><ul id="history"></ul></div>
+  </section>
+
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script>
+  // === KONFIGURACJA: wklej swoje dane z Supabase (Project Settings -> API Keys) ===
+  const SUPABASE_URL = "WKLEJ_PROJECT_URL";
+  const SUPABASE_KEY = "WKLEJ_PUBLISHABLE_KEY";
+  // =============================================================================
+
+  const $ = (id) => document.getElementById(id);
+
+  function el(tag, props, children) {
+    const node = document.createElement(tag);
+    Object.assign(node, props || {});
+    (children || []).forEach((c) => node.append(c));
+    return node;
+  }
+
+  function fmtDate(iso) {
+    if (!iso) return "";
+    return new Date(iso).toLocaleString("pl-PL", {
+      day: "numeric", month: "short", hour: "2-digit", minute: "2-digit",
+    });
+  }
+
+  const configured =
+    !SUPABASE_URL.startsWith("WKLEJ") && !SUPABASE_KEY.startsWith("WKLEJ");
+
+  if (!configured) {
+    $("setup").hidden = false;
+  } else {
+    init();
+  }
+
+  function init() {
+    const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    let channel = null;
+
+    function showError(msg) { $("app-error").textContent = msg || ""; }
+
+    async function load() {
+      const { data, error } = await sb.from("tasks").select("*");
+      if (error) { showError(error.message); return; }
+      showError("");
+      render(data || []);
+    }
+
+    function render(tasks) {
+      const active = tasks
+        .filter((t) => !t.done)
+        .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+      const history = tasks
+        .filter((t) => t.done)
+        .sort((a, b) => new Date(b.completed_at) - new Date(a.completed_at))
+        .slice(0, 50);
+
+      const activeList = $("active");
+      activeList.replaceChildren();
+      if (!active.length) {
+        activeList.append(el("div", { className: "empty", textContent: "Nic do zrobienia" }));
+      }
+      active.forEach((t) => {
+        const check = el("button", { className: "check", title: "Zrobione" });
+        check.addEventListener("click", () => setDone(t.id, true));
+        activeList.append(el("li", {}, [check, el("span", { className: "title", textContent: t.title })]));
+      });
+
+      const historyList = $("history");
+      historyList.replaceChildren();
+      if (!history.length) {
+        historyList.append(el("div", { className: "empty", textContent: "Historia jest pusta" }));
+      }
+      history.forEach((t) => {
+        const undo = el("button", { className: "ghost", textContent: "Cofnij" });
+        undo.addEventListener("click", () => setDone(t.id, false));
+        const del = el("button", { className: "ghost danger", textContent: "Usuń" });
+        del.addEventListener("click", () => removeTask(t.id));
+        const text = el("div", { className: "title" }, [
+          el("div", { textContent: t.title }),
+          el("div", { className: "meta", textContent: fmtDate(t.completed_at) }),
+        ]);
+        historyList.append(el("li", { className: "done" }, [text, undo, del]));
+      });
+    }
+
+    async function setDone(id, done) {
+      const { error } = await sb.from("tasks").update({ done }).eq("id", id);
+      if (error) showError(error.message);
+      else load();
+    }
+
+    async function removeTask(id) {
+      const { error } = await sb.from("tasks").delete().eq("id", id);
+      if (error) showError(error.message);
+      else load();
+    }
+
+    $("add-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const input = $("new-title");
+      const title = input.value.trim();
+      if (!title) return;
+      const { error } = await sb.from("tasks").insert({ title });
+      if (error) { showError(error.message); return; }
+      input.value = "";
+      load();
+    });
+
+    $("login-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      $("login-error").textContent = "";
+      const { error } = await sb.auth.signInWithPassword({
+        email: $("email").value.trim(),
+        password: $("password").value,
+      });
+      if (error) $("login-error").textContent = error.message;
+    });
+
+    $("logout").addEventListener("click", () => sb.auth.signOut());
+
+    function startRealtime() {
+      if (channel) return;
+      channel = sb
+        .channel("tasks-changes")
+        .on("postgres_changes", { event: "*", schema: "public", table: "tasks" }, () => load())
+        .subscribe();
+    }
+
+    function stopRealtime() {
+      if (channel) { sb.removeChannel(channel); channel = null; }
+    }
+
+    function onSession(session) {
+      if (session) {
+        $("login").hidden = true;
+        $("app").hidden = false;
+        load();
+        startRealtime();
+      } else {
+        $("app").hidden = true;
+        $("login").hidden = false;
+        stopRealtime();
+      }
+    }
+
+    // Wywołania Supabase wewnątrz callbacka odkładamy na później (setTimeout),
+    // żeby nie zablokować biblioteki.
+    sb.auth.onAuthStateChange((_event, session) => {
+      setTimeout(() => onSession(session), 0);
+    });
+
+    // Odśwież listę po powrocie do karty (np. po odblokowaniu telefonu).
+    document.addEventListener("visibilitychange", () => {
+      if (!document.hidden && !$("app").hidden) load();
+    });
+  }
+</script>
+</body>
+</html>
