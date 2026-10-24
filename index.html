@@ -42,7 +42,7 @@
   h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 28px 0 8px; font-weight: 600; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; }
   .pad { padding: 16px; }
-  input[type=text], input[type=email], input[type=password] {
+  input[type=text], input[type=email], input[type=password], input[type=date] {
     width: 100%;
     font: inherit;
     color: var(--text);
@@ -79,6 +79,8 @@
   .check:hover { border-color: var(--accent); }
   .done .title { color: var(--muted); text-decoration: line-through; }
   .empty { color: var(--muted); padding: 16px; text-align: center; }
+  .due-label { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 14px; }
+  .due-label input { flex: 1; }
   .error { color: var(--danger); font-size: 14px; min-height: 1.2em; }
   .topbar { display: flex; justify-content: space-between; align-items: center; }
   [hidden] { display: none !important; }
@@ -109,9 +111,12 @@
       <button id="logout" class="ghost">Wyloguj</button>
     </div>
 
-    <form id="add-form" class="row">
-      <input id="new-title" type="text" placeholder="Nowe zadanie…" autocomplete="off" required>
-      <button type="submit">Dodaj</button>
+    <form id="add-form" class="stack">
+      <div class="row">
+        <input id="new-title" type="text" placeholder="Nowe zadanie…" autocomplete="off" required>
+        <button type="submit">Dodaj</button>
+      </div>
+      <label class="due-label">Termin <input id="new-due" type="date"></label>
     </form>
     <div id="app-error" class="error"></div>
 
@@ -127,7 +132,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
   // === KONFIGURACJA: wklej swoje dane z Supabase (Project Settings -> API Keys) ===
-  const SUPABASE_URL = "WKLEJ_PROJECT_URL";
+  const SUPABASE_URL = "https://qfeignhegmxsleabaklv.supabase.co";
   const SUPABASE_KEY = "WKLEJ_PUBLISHABLE_KEY";
   // =============================================================================
 
@@ -145,6 +150,34 @@
     return new Date(iso).toLocaleString("pl-PL", {
       day: "numeric", month: "short", hour: "2-digit", minute: "2-digit",
     });
+  }
+
+  // Ile dni zostało do terminu (0 = dziś, ujemne = po terminie)
+  function daysLeft(due) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return Math.round((new Date(due + "T00:00:00") - today) / 86400000);
+  }
+
+  function dueText(due) {
+    if (!due) return "bez terminu";
+    const d = daysLeft(due);
+    if (d < 0) return "po terminie (" + due + ")";
+    if (d === 0) return "dziś";
+    if (d === 1) return "jutro";
+    return "za " + d + " dni (" + due + ")";
+  }
+
+  // Te same kolory co na zegarku: <=1 dzień czerwony, 2 czerwono-pomarańczowy,
+  // 3 pomarańczowy, 4 pomarańczowo-zielony, 5 i więcej zielony
+  function urgencyColor(due) {
+    if (!due) return "";
+    const d = daysLeft(due);
+    if (d <= 1) return "#ff453a";
+    if (d === 2) return "#ff6b26";
+    if (d === 3) return "#ff9f0a";
+    if (d === 4) return "#bfcc33";
+    return "#30d158";
   }
 
   const configured =
@@ -172,7 +205,11 @@
     function render(tasks) {
       const active = tasks
         .filter((t) => !t.done)
-        .sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+        .sort((a, b) => {
+          const da = a.due_date || "9999-12-31";
+          const db = b.due_date || "9999-12-31";
+          return da.localeCompare(db) || new Date(a.created_at) - new Date(b.created_at);
+        });
       const history = tasks
         .filter((t) => t.done)
         .sort((a, b) => new Date(b.completed_at) - new Date(a.completed_at))
@@ -186,7 +223,13 @@
       active.forEach((t) => {
         const check = el("button", { className: "check", title: "Zrobione" });
         check.addEventListener("click", () => setDone(t.id, true));
-        activeList.append(el("li", {}, [check, el("span", { className: "title", textContent: t.title })]));
+        const meta = el("div", { className: "meta", textContent: dueText(t.due_date) });
+        meta.style.color = urgencyColor(t.due_date);
+        const text = el("div", { className: "title" }, [
+          el("div", { textContent: t.title }),
+          meta,
+        ]);
+        activeList.append(el("li", {}, [check, text]));
       });
 
       const historyList = $("history");
@@ -224,9 +267,11 @@
       const input = $("new-title");
       const title = input.value.trim();
       if (!title) return;
-      const { error } = await sb.from("tasks").insert({ title });
+      const due = $("new-due").value || null;
+      const { error } = await sb.from("tasks").insert({ title, due_date: due });
       if (error) { showError(error.message); return; }
       input.value = "";
+      $("new-due").value = "";
       load();
     });
 
