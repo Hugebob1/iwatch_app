@@ -42,7 +42,7 @@
   h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 28px 0 8px; font-weight: 600; }
   .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; }
   .pad { padding: 16px; }
-  input[type=text], input[type=email], input[type=password], input[type=date] {
+  input[type=text], input[type=email], input[type=password], input[type=date], textarea {
     width: 100%;
     font: inherit;
     color: var(--text);
@@ -51,7 +51,9 @@
     border-radius: 10px;
     padding: 12px;
   }
-  input:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  input:focus, textarea:focus { outline: 2px solid var(--accent); outline-offset: -1px; }
+  textarea { resize: vertical; min-height: 64px; }
+  .note { color: var(--muted); font-size: 14px; white-space: pre-wrap; margin-top: 2px; }
   button {
     font: inherit;
     cursor: pointer;
@@ -116,6 +118,7 @@
         <input id="new-title" type="text" placeholder="Nowe zadanie…" autocomplete="off" required>
         <button type="submit">Dodaj</button>
       </div>
+      <textarea id="new-content" rows="2" placeholder="Opis (opcjonalnie)…"></textarea>
       <label class="due-label">Termin <input id="new-due" type="date"></label>
     </form>
     <div id="app-error" class="error"></div>
@@ -132,7 +135,7 @@
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <script>
   // === KONFIGURACJA: wklej swoje dane z Supabase (Project Settings -> API Keys) ===
-  const SUPABASE_URL = "https://abcdefghijkl.supabase.co";
+  const SUPABASE_URL = "https://qfeignhegmxsleabaklv.supabase.co";
   const SUPABASE_KEY = "sb_publishable_UBY-x0RYwnGxWWwOdyChgQ_Nx_LZSjT";
   // =============================================================================
 
@@ -225,10 +228,9 @@
         check.addEventListener("click", () => setDone(t.id, true));
         const meta = el("div", { className: "meta", textContent: dueText(t.due_date) });
         meta.style.color = urgencyColor(t.due_date);
-        const text = el("div", { className: "title" }, [
-          el("div", { textContent: t.title }),
-          meta,
-        ]);
+        const parts = [el("div", { textContent: t.title }), meta];
+        if (t.content) parts.push(el("div", { className: "note", textContent: t.content }));
+        const text = el("div", { className: "title" }, parts);
         activeList.append(el("li", {}, [check, text]));
       });
 
@@ -268,9 +270,11 @@
       const title = input.value.trim();
       if (!title) return;
       const due = $("new-due").value || null;
-      const { error } = await sb.from("tasks").insert({ title, due_date: due });
+      const content = $("new-content").value.trim() || null;
+      const { error } = await sb.from("tasks").insert({ title, content, due_date: due });
       if (error) { showError(error.message); return; }
       input.value = "";
+      $("new-content").value = "";
       $("new-due").value = "";
       load();
     });
